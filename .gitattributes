@@ -1,0 +1,3 @@
+# Quebras de linha sempre LF: scripts .sh com CRLF quebram no Linux da VPS.
+* text=auto eol=lf
+*.png binary

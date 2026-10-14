@@ -1,0 +1,87 @@
+# Sobe tudo com:  docker compose up -d --build
+#
+# Quais serviços sobem depende de COMPOSE_PROFILES no .env (o configurador preenche):
+#   evolution -> agente + Evolution GO + Postgres   (WhatsApp por QR Code)
+#   https     -> agente + Caddy com HTTPS automático (obrigatório para a API oficial da Meta)
+# Pode combinar: COMPOSE_PROFILES=evolution,https
+
+name: agente-vendas
+
+services:
+  agente:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${FUSO:-America/Sao_Paulo}
+      EVOLUTION_URL: http://evolution-go:4000
+      URL_INTERNA_AGENTE: http://agente:8000
+    volumes:
+      - ./config:/app/config
+      - ./dados:/app/dados
+    ports:
+      # Só acessível de dentro da VPS (ou por túnel SSH). A internet chega pelo Caddy.
+      - "127.0.0.1:8000:8000"
+
+  evolution-go:
+    image: evoapicloud/evolution-go:0.7.2
+    profiles: ["evolution"]
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: "4000"
+      CLIENT_NAME: agente-vendas
+      GLOBAL_API_KEY: ${EVOLUTION_API_KEY_GLOBAL:-}
+      POSTGRES_AUTH_DB: postgresql://evolution:${POSTGRES_SENHA}@postgres:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://evolution:${POSTGRES_SENHA}@postgres:5432/evogo_users?sslmode=disable
+      DATABASE_SAVE_MESSAGES: "false"
+      CONNECT_ON_STARTUP: "true"
+      WEBHOOK_FILES: "true"          # áudios chegam no webhook, prontos para transcrever
+      EVENT_IGNORE_GROUP: "true"
+      EVENT_IGNORE_STATUS: "true"
+      WADEBUG: WARN
+      LOGTYPE: console
+      OS_NAME: Agente de Vendas
+      EVOLUTION_OPERATOR_EMAIL: ${EVOLUTION_EMAIL_LICENCA:-}
+    volumes:
+      - evolution_dados:/app/dbdata
+    ports:
+      # Painel /manager: acesse por túnel SSH (ssh -L 4000:localhost:4000 root@IP_DA_VPS).
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["evolution"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_SENHA:-}
+      POSTGRES_DB: evolution
+    volumes:
+      - postgres_dados:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  caddy:
+    image: caddy:2.11.6-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMINIO: ${DOMINIO:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_dados:/data
+
+volumes:
+  evolution_dados:
+  postgres_dados:
+  caddy_dados:

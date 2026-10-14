@@ -1,0 +1,12 @@
+# HTTPS automático (Let's Encrypt). Sem domínio próprio, use o IP com sslip.io:
+# DOMINIO=203-0-113-10.sslip.io no .env (o configurador faz isso por você).
+{$DOMINIO} {
+	# Só as rotas públicas do agente ficam expostas.
+	@publico path /webhook/meta /leads.csv /saude
+	handle @publico {
+		reverse_proxy agente:8000
+	}
+	handle {
+		respond "Agente de vendas no ar." 200
+	}
+}
